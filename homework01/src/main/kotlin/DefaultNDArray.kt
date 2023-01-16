@@ -36,16 +36,19 @@ open class DefaultNDArray private constructor(private val array: IntArray, priva
 
     private fun get1DIndex(point: Point): Int {
         if (point.ndim != ndim) {
-            throw NDArrayException.IllegalPointDimensionException()
+            throw NDArrayException.IllegalPointDimensionException(point.ndim, ndim)
         }
 
         var index: Int = point.dim(0)
-        for (i in 1 until point.ndim) {
-            index = dim(i) * index + point.dim(i)
+        if (index >= dim(0)) {
+            throw NDArrayException.IllegalPointCoordinateException(0)
         }
 
-        if (index >= size) {
-            throw NDArrayException.IllegalPointCoordinateException()
+        for (i in 1 until point.ndim) {
+            if (point.dim(i) >= dim(i) || point.dim(i) < 0) {
+                throw NDArrayException.IllegalPointCoordinateException(i)
+            }
+            index = dim(i) * index + point.dim(i)
         }
 
         return index
@@ -60,8 +63,13 @@ open class DefaultNDArray private constructor(private val array: IntArray, priva
     override fun copy(): NDArray = DefaultNDArray(array.clone(), shape)
 
     override fun add(other: NDArray) {
-        if (other.ndim + 1 != ndim && other.ndim != ndim || (0 until other.ndim).any { dim(it) != other.dim(it) }) {
-            throw NDArrayException.NonMatchingDimensionsException()
+        if (other.ndim + 1 != ndim && other.ndim != ndim) {
+            throw NDArrayException.NonMatchingDimensionsException(ndim, other.ndim)
+        }
+        for (i in 0 until other.ndim) {
+            if (dim(i) != other.dim(i)) {
+                throw NDArrayException.NonMatchingDimensionsException(dim(i), other.dim(i))
+            }
         }
 
         var curIndex: Point = DefaultPoint(*IntArray(other.ndim) { 0 })
@@ -78,7 +86,7 @@ open class DefaultNDArray private constructor(private val array: IntArray, priva
 
     override fun dot(other: NDArray): NDArray {
         if (ndim != 2 || other.ndim > 2 || other.dim(0) != dim(1)) {
-            throw NDArrayException.NonMatchingDimensionsException()
+            throw NDArrayException.NonMatchingDimensionsException(dim(1), other.dim(0))
         }
 
         val secondDim = if (other.ndim == 1) 1 else other.dim(1)
@@ -100,21 +108,19 @@ open class DefaultNDArray private constructor(private val array: IntArray, priva
     }
 
     override fun view(): NDArray {
-        return SharedNDArray.viewArray(this)
+        return ModifiedNDArray()
     }
 
+    internal inner class ModifiedNDArray: NDArray by this@DefaultNDArray
 }
 
-internal class SharedNDArray private constructor(private val ndArray: NDArray) : NDArray by ndArray {
-    companion object {
-        fun viewArray(ndArray: NDArray): NDArray {
-            return SharedNDArray(ndArray)
-        }
-    }
-}
+sealed class NDArrayException(val mes: String) : Exception(mes) {
+    class IllegalPointCoordinateException(val pos: Int) :
+        NDArrayException("Index out of range at position $pos")
 
-sealed class NDArrayException : Exception() {
-    class IllegalPointCoordinateException : NDArrayException()
-    class IllegalPointDimensionException : NDArrayException()
-    class NonMatchingDimensionsException : NDArrayException()
+    class IllegalPointDimensionException(val d1: Int, val d2: Int) :
+        NDArrayException("Index does not match Array dimension: $d1 vs. $d2")
+
+    class NonMatchingDimensionsException(val d1: Int, val d2: Int) :
+        NDArrayException("Arrays do not have matching dimensions: $d1 vs. $d2")
 }
